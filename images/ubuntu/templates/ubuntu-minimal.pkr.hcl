@@ -1,8 +1,8 @@
 packer {
   required_plugins {
-    azure = {
-      source  = "github.com/hashicorp/azure"
-      version = "1.4.5"
+    docker = {
+      source  = "github.com/hashicorp/docker"
+      version = "1.0.9"
     }
   }
 }
@@ -117,7 +117,7 @@ variable "vm_size" {
   default = "Standard_D4s_v4"
 }
 
-source "azure-arm" "build_image" {
+source "docker" "build_image" {
   location = "${var.location}"
 
   // Auth
@@ -128,6 +128,7 @@ source "azure-arm" "build_image" {
   client_cert_path = "${var.client_cert_path}"
 
   // Base image
+  image           = "ubuntu"
   image_offer     = "0001-com-ubuntu-server-jammy"
   image_publisher = "canonical"
   image_sku       = "22_04-lts"
