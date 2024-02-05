@@ -1,7 +1,7 @@
 Import-Module "$PSScriptRoot/../helpers/Common.Helpers.psm1"
 
 Describe "PostgreSQL" {
-    It "PostgreSQL Service" {
+    It "PostgreSQL Service" -Skip:(-not (Test-IsSystemdRunning)) {
         "sudo systemctl start postgresql" | Should -ReturnZeroExitCode
         "pg_isready" | Should -OutputTextMatchingRegex "/var/run/postgresql:5432 - accepting connections"
         "sudo systemctl stop postgresql" | Should -ReturnZeroExitCode
@@ -11,8 +11,10 @@ Describe "PostgreSQL" {
         $toolsetVersion = (Get-ToolsetContent).postgresql.version
         # Client version
         (psql --version).split()[-1] | Should -BeLike "$toolsetVersion*"
-        # Server version
-        (pg_config --version).split()[-1] | Should -BeLike "$toolsetVersion*"
+        if (Test-IsSystemdRunning) {
+            # Server version
+            (pg_config --version).split()[-1] | Should -BeLike "$toolsetVersion*"
+        }
     }
 }
 
