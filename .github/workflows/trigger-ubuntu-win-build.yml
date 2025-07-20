@@ -252,6 +252,23 @@ jobs:
           }
           echo "::endgroup::"
 
+      - name: Prune docker images
+        run: |
+          echo "::group::docker image prune"
+          docker image prune --all --force
+          echo "::endgroup::"
+
+          echo "::group::Disk space after pruning docker images"
+          switch ("${{ runner.os }}") {
+            "Linux" {
+              df -h
+            }
+            "Windows" {
+              Get-PSDrive -PSProvider FileSystem
+            }
+          }
+          echo "::endgroup::"
+
       - name: Setup `packer`
         id: setup
         uses: hashicorp/setup-packer@v3.1.0
