@@ -83,6 +83,8 @@ Function GenerateResourcesAndImage {
             A helper function to help generate an image.
         .DESCRIPTION
             This function will generate the Azure resources and image for the specified image type.
+        .PARAMETER DockerImageSource
+            Build as docker image.
         .PARAMETER SubscriptionId
             The Azure subscription id where the Azure resources will be created.
         .PARAMETER ResourceGroupName
@@ -120,27 +122,30 @@ Function GenerateResourcesAndImage {
             Specify the version of the packer Azure plugin to use. The default is "2.2.1".
         .EXAMPLE
             GenerateResourcesAndImage -SubscriptionId {YourSubscriptionId} -ResourceGroupName "shsamytest1" -ImageGenerationRepositoryRoot "C:\runner-images" -ImageType Ubuntu2204 -AzureLocation "East US"
+            GenerateResourcesAndImage -DockerImageSource -ImageType Ubuntu2204
     #>
     param (
-        [Parameter(Mandatory = $True)]
+        [Parameter(Mandatory = $True, ParameterSetName = 'Docker')]
+        [switch] $DockerImageSource,
+        [Parameter(Mandatory = $True, ParameterSetName = 'Azure')]
         [string] $SubscriptionId,
-        [Parameter(Mandatory = $True)]
+        [Parameter(Mandatory = $True, ParameterSetName = 'Azure')]
         [string] $ResourceGroupName,
         [Parameter(Mandatory = $True)]
         [ImageType] $ImageType,
         [Parameter(Mandatory = $False)]
         [string] $ManagedImageName = "Runner-Image-$($ImageType)",
-        [Parameter(Mandatory = $True)]
+        [Parameter(Mandatory = $True, ParameterSetName = 'Azure')]
         [string] $AzureLocation,
         [Parameter(Mandatory = $False)]
         [string] $ImageGenerationRepositoryRoot = $pwd,
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $False, ParameterSetName = 'Azure')]
         [int] $SecondsToWaitForServicePrincipalSetup = 120,
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $False, ParameterSetName = 'Azure')]
         [string] $AzureClientId,
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $False, ParameterSetName = 'Azure')]
         [string] $AzureClientSecret,
-        [Parameter(Mandatory = $False)]
+        [Parameter(Mandatory = $False, ParameterSetName = 'Azure')]
         [string] $AzureTenantId,
         [Parameter(Mandatory = $False)]
         [string] $PluginVersion = "2.2.1",
@@ -154,6 +159,7 @@ Function GenerateResourcesAndImage {
     )
 
     Show-LatestCommit -ErrorAction SilentlyContinue
+    Write-Debug "ParameterSetName: $($PSCmdlet.ParameterSetName)."
 
     # Validate packer is installed
     $PackerBinary = Get-Command "packer"
@@ -214,19 +220,28 @@ Function GenerateResourcesAndImage {
     }
 
     Write-Host "Validating packer template..."
+    $AddValidateParams = @()
+    switch ($PSCmdlet.ParameterSetName) {
+        ('Azure') {
+            $AddValidateParams = @(
+                "-var=client_id=fake",
+                "-var=client_secret=fake",
+                "-var=subscription_id=$($SubscriptionId)",
+                "-var=tenant_id=fake",
+                "-var=location=$($AzureLocation)",
+                "-var=managed_image_resource_group_name=$($ResourceGroupName)",
+                "-var=azure_tags=$($TagsJson)"
+            )
+        }
+        default { }
+    }
     & $PackerBinary validate `
         "-only=$($PackerTemplate.BuildName)*" `
-        "-var=client_id=fake" `
-        "-var=client_secret=fake" `
-        "-var=subscription_id=$($SubscriptionId)" `
-        "-var=tenant_id=fake" `
-        "-var=location=$($AzureLocation)" `
         "-var=image_os=$($PackerTemplate.ImageOS)" `
         "-var=managed_image_name=$($ManagedImageName)" `
-        "-var=managed_image_resource_group_name=$($ResourceGroupName)" `
         "-var=install_password=$($InstallPassword)" `
         "-var=allowed_inbound_ip_addresses=$($AllowedInboundIpAddresses)" `
-        "-var=azure_tags=$($TagsJson)" `
+        $AddValidateParams `
         $PackerTemplate.Path
 
     if ($LastExitCode -ne 0) {
@@ -234,69 +249,81 @@ Function GenerateResourcesAndImage {
     }
 
     try {
-        # Login to Azure subscription
-        if ([string]::IsNullOrEmpty($AzureClientId)) {
-            Write-Verbose "No AzureClientId was provided, will use interactive login."
-            az login --output none
-        }
-        else {
-            Write-Verbose "AzureClientId was provided, will use service principal login."
-            az login --service-principal --username $AzureClientId --password=$AzureClientSecret --tenant $AzureTenantId --output none
-        }
-        az account set --subscription $SubscriptionId
-        if ($LastExitCode -ne 0) {
-            throw "Failed to login to Azure subscription '$SubscriptionId'."
-        }
-
-        # Check resource group
-        $ResourceGroupExists = [System.Convert]::ToBoolean((az group exists --name $ResourceGroupName));
-        if ($ResourceGroupExists) {
-            Write-Verbose "Resource group '$ResourceGroupName' already exists."
-        }
-        else {
-            throw "Resource group '$ResourceGroupName' does not exist."
-        }
-
-        # Create service principal
-        if ([string]::IsNullOrEmpty($AzureClientId)) {
-            Write-Host "Creating service principal for packer..."
-            $ADCleanupRequired = $true
-
-            $ServicePrincipalName = "packer-" + [System.GUID]::NewGuid().ToString().ToUpper()
-            $ServicePrincipal = az ad sp create-for-rbac --name $ServicePrincipalName --role Contributor --scopes /subscriptions/$SubscriptionId --only-show-errors | ConvertFrom-Json
+        if ($PSCmdlet.ParameterSetName -eq 'Azure') {
+            # Login to Azure subscription
+            if ([string]::IsNullOrEmpty($AzureClientId)) {
+                Write-Verbose "No AzureClientId was provided, will use interactive login."
+                az login --output none
+            }
+            else {
+                Write-Verbose "AzureClientId was provided, will use service principal login."
+                az login --service-principal --username $AzureClientId --password=$AzureClientSecret --tenant $AzureTenantId --output none
+            }
+            az account set --subscription $SubscriptionId
             if ($LastExitCode -ne 0) {
-                throw "Failed to create service principal '$ServicePrincipalName'."
+                throw "Failed to login to Azure subscription '$SubscriptionId'."
             }
 
-            $ServicePrincipalAppId = $ServicePrincipal.appId
-            $ServicePrincipalPassword = $ServicePrincipal.password
-            $TenantId = $ServicePrincipal.tenant
+            # Check resource group
+            $ResourceGroupExists = [System.Convert]::ToBoolean((az group exists --name $ResourceGroupName));
+            if ($ResourceGroupExists) {
+                Write-Verbose "Resource group '$ResourceGroupName' already exists."
+            }
+            else {
+                throw "Resource group '$ResourceGroupName' does not exist."
+            }
 
-            Write-Verbose "Waiting for service principal to propagate..."
-            Start-Sleep $SecondsToWaitForServicePrincipalSetup
-            Write-Host "Service principal created with id '$ServicePrincipalAppId'. It will be deleted after the build."
+            # Create service principal
+            if ([string]::IsNullOrEmpty($AzureClientId)) {
+                Write-Host "Creating service principal for packer..."
+                $ADCleanupRequired = $true
+
+                $ServicePrincipalName = "packer-" + [System.GUID]::NewGuid().ToString().ToUpper()
+                $ServicePrincipal = az ad sp create-for-rbac --name $ServicePrincipalName --role Contributor --scopes /subscriptions/$SubscriptionId --only-show-errors | ConvertFrom-Json
+                if ($LastExitCode -ne 0) {
+                    throw "Failed to create service principal '$ServicePrincipalName'."
+                }
+
+                $ServicePrincipalAppId = $ServicePrincipal.appId
+                $ServicePrincipalPassword = $ServicePrincipal.password
+                $TenantId = $ServicePrincipal.tenant
+
+                Write-Verbose "Waiting for service principal to propagate..."
+                Start-Sleep $SecondsToWaitForServicePrincipalSetup
+                Write-Host "Service principal created with id '$ServicePrincipalAppId'. It will be deleted after the build."
+            }
+            else {
+                $ServicePrincipalAppId = $AzureClientId
+                $ServicePrincipalPassword = $AzureClientSecret
+                $TenantId = $AzureTenantId
+            }
+            Write-Debug "Service principal app id: $ServicePrincipalAppId."
+            Write-Debug "Tenant id: $TenantId."
         }
-        else {
-            $ServicePrincipalAppId = $AzureClientId
-            $ServicePrincipalPassword = $AzureClientSecret
-            $TenantId = $AzureTenantId
+
+        $AddBuildParams = @()
+        switch ($PSCmdlet.ParameterSetName) {
+            ('Azure') {
+                $AddBuildParams = @(
+                    "-var=client_id=$($ServicePrincipalAppId)",
+                    "-var=client_secret=$($ServicePrincipalPassword)",
+                    "-var=subscription_id=$($SubscriptionId)",
+                    "-var=tenant_id=$($TenantId)",
+                    "-var=location=$($AzureLocation)",
+                    "-var=managed_image_resource_group_name=$($ResourceGroupName)",
+                    "-var=azure_tags=$($TagsJson)"
+                )
+            }
+            default { }
         }
-        Write-Debug "Service principal app id: $ServicePrincipalAppId."
-        Write-Debug "Tenant id: $TenantId."
 
         & $PackerBinary build -on-error="$($OnError)" `
             -only "$($PackerTemplate.BuildName)*" `
-            -var "client_id=$($ServicePrincipalAppId)" `
-            -var "client_secret=$($ServicePrincipalPassword)" `
-            -var "subscription_id=$($SubscriptionId)" `
-            -var "tenant_id=$($TenantId)" `
-            -var "location=$($AzureLocation)" `
             -var "image_os=$($PackerTemplate.ImageOS)" `
             -var "managed_image_name=$($ManagedImageName)" `
-            -var "managed_image_resource_group_name=$($ResourceGroupName)" `
             -var "install_password=$($InstallPassword)" `
             -var "allowed_inbound_ip_addresses=$($AllowedInboundIpAddresses)" `
-            -var "azure_tags=$($TagsJson)" `
+            $AddBuildParams `
             $PackerTemplate.Path
 
         if ($LastExitCode -ne 0) {
@@ -307,18 +334,21 @@ Function GenerateResourcesAndImage {
     } finally {
         Write-Verbose "`nCleaning up..."
 
-        # Remove ADServicePrincipal and ADApplication
-        if ($ADCleanupRequired) {
-            Write-Host "Removing ADServicePrincipal..."
-            if (az ad sp show --id $ServicePrincipalAppId --query id) {
-                az ad sp delete --id $ServicePrincipalAppId
-            }
+        if ($PSCmdlet.ParameterSetName -eq 'Azure') {
+            # Remove ADServicePrincipal and ADApplication
+            if ($ADCleanupRequired) {
+                Write-Host "Removing ADServicePrincipal..."
+                if (az ad sp show --id $ServicePrincipalAppId --query id) {
+                    az ad sp delete --id $ServicePrincipalAppId
+                }
 
-            Write-Host "Removing ADApplication..."
-            if (az ad app show --id $ServicePrincipalAppId --query id) {
-                az ad app delete --id $ServicePrincipalAppId
+                Write-Host "Removing ADApplication..."
+                if (az ad app show --id $ServicePrincipalAppId --query id) {
+                    az ad app delete --id $ServicePrincipalAppId
+                }
             }
         }
+
         Write-Verbose "Cleanup completed."
     }
 }

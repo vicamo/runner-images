@@ -204,7 +204,7 @@ jobs:
           Import-Module .\helpers\GenerateResourcesAndImage.ps1
 
           echo "::group::Generate Image"
-          GenerateResourcesAndImage -ImageType "${env:IMAGE_TYPE}"
+          GenerateResourcesAndImage -DockerImageSource -ImageType "${env:IMAGE_TYPE}"
           echo "::endgroup::"
 
           $readme = Join-Path "images" "${{ steps.preconfig.outputs.image_os }}" "${env:IMAGE_TYPE}-Readme.md"
