@@ -151,6 +151,8 @@ jobs:
           echo "::endgroup::"
 
       - name: Build `${{ inputs.image_type }}`
+        env:
+          PACKER_LOG: 1
         run: |
           Import-Module .\helpers\GenerateResourcesAndImage.ps1
 
