@@ -5,6 +5,9 @@ on:
   pull_request_target:
     types: labeled
     paths:
+    - '.github/workflows/trigger-ubuntu-win-build.yml'
+    - '.github/workflows/windows*.yml'
+    - 'helpers/GenerateResourcesAndImage.ps1'
     - 'images/windows/**'
 
 defaults:
