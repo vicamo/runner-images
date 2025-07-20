@@ -53,6 +53,8 @@ jobs:
           echo "::endgroup::"
 
       - name: Build Image
+        env:
+          PACKER_LOG: 1
         run: |
           Import-Module .\helpers\GenerateResourcesAndImage.ps1
 
