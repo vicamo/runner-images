@@ -3,9 +3,13 @@ run-name: Ubuntu22.04 - ${{ github.event.pull_request.title }}
 
 on:
   pull_request_target:
-    types: labeled
+    types:
+      - labeled
     paths:
-    - 'images/ubuntu/**'
+      - '.github/workflows/trigger-ubuntu-win-build.yml'
+      - '.github/workflows/ubuntu*.yml'
+      - 'helpers/GenerateResourcesAndImage.ps1'
+      - 'images/ubuntu/**'
 
 defaults:
   run:

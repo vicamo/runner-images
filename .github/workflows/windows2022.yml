@@ -3,9 +3,13 @@ run-name: Windows2022 - ${{ github.event.pull_request.title }}
 
 on:
   pull_request_target:
-    types: labeled
+    types:
+      - labeled
     paths:
-    - 'images/windows/**'
+      - '.github/workflows/trigger-ubuntu-win-build.yml'
+      - '.github/workflows/windows*.yml'
+      - 'helpers/GenerateResourcesAndImage.ps1'
+      - 'images/windows/**'
 
 defaults:
   run:
