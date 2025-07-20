@@ -13,6 +13,7 @@ defaults:
 
 jobs:
   trigger-workflow:
+    if: ${{ secrets.CI_PR_TOKEN != '' }}
     runs-on: ubuntu-latest
     outputs:
       ci_workflow_run_id: ${{ steps.resolve.outputs.ci_workflow_run_id }}
@@ -117,3 +118,24 @@ jobs:
 
           $gitHubApi = Get-GithubApi -Repository "${env:CI_REPO}" -AccessToken "${env:CI_PR_TOKEN}"
           $gitHubApi.CancelWorkflowRun("${{ needs.trigger-workflow.outputs.ci_workflow_run_id }}")
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup `packer`
+        id: setup
+        uses: hashicorp/setup-packer@v3.1.0
+        with:
+          # See https://releases.hashicorp.com/packer/
+          version: '1.13.1'
+
+      - name: Build `${{ inputs.image_type }}`
+        run: |
+          Import-Module .\helpers\GenerateResourcesAndImage.ps1
+
+          echo "::group::Generate Image"
+          GenerateResourcesAndImage -ImageType ${{ inputs.image_type }}
+          echo "::endgroup::"
