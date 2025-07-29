@@ -52,3 +52,9 @@ source "azure-arm" "image" {
     }
   }
 }
+
+source "docker" "image" {
+  windows_container = true
+  commit = true
+  image  = "mcr.microsoft.com/windows/servercore:${var.source_image_version}"
+}

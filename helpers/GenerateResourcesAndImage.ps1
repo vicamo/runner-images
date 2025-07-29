@@ -83,6 +83,8 @@ Function GenerateResourcesAndImage {
             A helper function to help generate an image.
         .DESCRIPTION
             This function will generate the Azure resources and image for the specified image type.
+        .PARAMETER DockerImageSource
+            Build as docker image.
         .PARAMETER SubscriptionId
             The Azure subscription id where the Azure resources will be created.
         .PARAMETER ResourceGroupName
@@ -122,8 +124,11 @@ Function GenerateResourcesAndImage {
             Specify the version of the packer Docker plugin to use. The default is "1.1.1".
         .EXAMPLE
             GenerateResourcesAndImage -SubscriptionId {YourSubscriptionId} -ResourceGroupName "shsamytest1" -ImageGenerationRepositoryRoot "C:\runner-images" -ImageType Ubuntu2204 -AzureLocation "East US"
+            GenerateResourcesAndImage -DockerImageSource -ImageType Ubuntu2204
     #>
     param (
+        [Parameter(Mandatory = $True, ParameterSetName = 'Docker')]
+        [switch] $DockerImageSource,
         [Parameter(Mandatory = $True, ParameterSetName = 'AzureARM')]
         [string] $SubscriptionId,
         [Parameter(Mandatory = $True, ParameterSetName = 'AzureARM')]
@@ -167,6 +172,15 @@ Function GenerateResourcesAndImage {
     }
 
     # Get template path
+    $BuildNameSuffix = ""
+    switch ($PSCmdlet.ParameterSetName) {
+        ('AzureARM') {
+            $BuildNameSuffix = ".azure-arm.azure_image"
+        }
+        ('Docker') {
+            $BuildNameSuffix = ".docker.docker_image"
+        }
+    }
     $PackerTemplate = Get-PackerTemplate -RepositoryRoot $ImageGenerationRepositoryRoot -ImageType $ImageType
     Write-Debug "Template path: $($PackerTemplate.Path)."
 
@@ -236,7 +250,7 @@ Function GenerateResourcesAndImage {
         default { }
     }
     & $PackerBinary validate `
-        "-only=$($PackerTemplate.BuildName)*" `
+        "-only=$($PackerTemplate.BuildName + $BuildNameSuffix)*" `
         "-var=image_os=$($PackerTemplate.ImageOS)" `
         "-var=managed_image_name=$($ManagedImageName)" `
         "-var=install_password=$($InstallPassword)" `
@@ -318,7 +332,7 @@ Function GenerateResourcesAndImage {
         }
 
         & $PackerBinary build -on-error="$($OnError)" `
-            -only "$($PackerTemplate.BuildName)*" `
+            -only "$($PackerTemplate.BuildName + $BuildNameSuffix)*" `
             -var "image_os=$($PackerTemplate.ImageOS)" `
             -var "managed_image_name=$($ManagedImageName)" `
             -var "install_password=$($InstallPassword)" `
