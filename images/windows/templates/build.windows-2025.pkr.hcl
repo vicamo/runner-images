@@ -1,5 +1,11 @@
 build {
-  sources = ["source.azure-arm.image"]
+  source "source.azure-arm.image" {
+    name = "azure_image"
+  }
+  source "source.docker.image" {
+    name = "docker_image"
+  }
+
   name = "windows-2025"
 
   provisioner "powershell" {
