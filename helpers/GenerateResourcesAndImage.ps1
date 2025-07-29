@@ -13,7 +13,9 @@ Function Get-PackerTemplate {
         [Parameter(Mandatory = $True)]
         [string] $RepositoryRoot,
         [Parameter(Mandatory = $True)]
-        [ImageType] $ImageType
+        [ImageType] $ImageType,
+        [Parameter(Mandatory = $False)]
+        [string] $BuildNameSuffix
     )
 
     switch ($ImageType) {
@@ -50,7 +52,7 @@ Function Get-PackerTemplate {
     }
 
     return [PSCustomObject] @{
-        "BuildName" = $buildName
+        "BuildName" = $buildName + $BuildNameSuffix
         "ImageOS"   = $imageOS
         "Path"      = [IO.Path]::GetDirectoryName($imageTemplatePath)
     }
@@ -172,7 +174,16 @@ Function GenerateResourcesAndImage {
     }
 
     # Get template path
-    $PackerTemplate = Get-PackerTemplate -RepositoryRoot $ImageGenerationRepositoryRoot -ImageType $ImageType
+    $BuildNameSuffix = ""
+    switch ($PSCmdlet.ParameterSetName) {
+        ('Azure') {
+            $BuildNameSuffix = ".azure-arm.azure-image"
+        }
+        ('Docker') {
+            $BuildNameSuffix = ".docker.docker-image"
+        }
+    }
+    $PackerTemplate = Get-PackerTemplate -RepositoryRoot $ImageGenerationRepositoryRoot -ImageType $ImageType -BuildNameSuffix $BuildNameSuffix
     Write-Debug "Template path: $($PackerTemplate.Path)."
 
     # Prepare list of allowed inbound IP addresses

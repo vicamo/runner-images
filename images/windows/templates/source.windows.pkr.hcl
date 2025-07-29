@@ -1,4 +1,4 @@
-source "azure-arm" "image" {
+source "azure-arm" "azure-image" {
   client_cert_path                       = var.client_cert_path
   client_id                              = var.client_id
   client_secret                          = var.client_secret
@@ -51,4 +51,10 @@ source "azure-arm" "image" {
       value = azure_tag.value
     }
   }
+}
+
+source "docker" "docker-image" {
+  windows_container = true
+  commit = true
+  image  = "mcr.microsoft.com/windows/servercore:${var.source_image_version}"
 }
