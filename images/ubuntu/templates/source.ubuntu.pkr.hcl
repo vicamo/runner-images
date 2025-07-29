@@ -46,3 +46,8 @@ source "azure-arm" "image" {
     }
   }
 }
+
+source "docker" "image" {
+  commit = true
+  image  = "ubuntu:${var.source_image_version}"
+}
