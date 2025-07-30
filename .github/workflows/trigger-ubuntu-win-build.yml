@@ -47,7 +47,7 @@ jobs:
           Import-Module ./helpers/GitHubApi.psm1
           $gitHubApi = Get-GithubApi -Repository "${env:CI_REPO}" -AccessToken "${env:CI_PR_TOKEN}"
 
-          $workflowFileName = $("{0}.yml" -f "${{ inputs.image_type }}").ToLower()
+          $workflowFileName = "build-runner-images.yml"
           $WorkflowSearchPattern = "${env:PR_GUID}"
 
           # It might take a few minutes for the action to start
