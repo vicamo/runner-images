@@ -1,0 +1,43 @@
+name: Build Runner Images
+run-name: ${{ format('{0} - {1}', github.event.action, github.event.client_payload.pr_title) }}
+
+on:
+  repository_dispatch:
+    types:
+      - trigger-ubuntu2204-build
+      - trigger-ubuntu2404-build
+      - trigger-windows2019-build
+      - trigger-windows2022-build
+      - trigger-windows2025-build
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  docker-build:
+    runs-on: ${{ contains(github.event.action, 'ubuntu') && 'ubuntu-latest' || 'windows-2025' }}
+
+    steps:
+      - run: |
+          $ImageType = ("${{ github.event.action }}" -split "-")[1]
+          "IMAGE_TYPE=$ImageType" | Out-File -Append -FilePath $env:GITHUB_ENV
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.client_payload.custom_repo }}
+          ref: ${{ github.event.client_payload.custom_repo_commit_hash }}
+
+      - name: Setup `packer`
+        uses: hashicorp/setup-packer@v3.1.0
+        with:
+          # See https://releases.hashicorp.com/packer/
+          version: '1.13.1'
+
+      - name: Build Image
+        run: |
+          Import-Module .\helpers\GenerateResourcesAndImage.ps1
+
+          echo "::group::Generate Image"
+          GenerateResourcesAndImage -ImageType "${env:IMAGE_TYPE}"
+          echo "::endgroup::"
