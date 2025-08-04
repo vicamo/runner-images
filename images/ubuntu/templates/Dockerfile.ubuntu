@@ -7,7 +7,14 @@ RUN \
 	apt-get update --quiet --quiet; \
 	apt-get upgrade --yes; \
 	apt-get install --no-install-recommends --yes \
+		apt-utils \
+		ca-certificates \
+		lsb-release \
+		motd-news-config \
+		rsync \
 		sudo \
+		systemd \
+		wget \
 	; \
 	\
 	if id -a ubuntu >/dev/null 2>&1; then \
