@@ -26,8 +26,10 @@ if [ -e /etc/waagent.conf ]; then
     sed -i 's/ResourceDisk.SwapSizeMB=0/ResourceDisk.SwapSizeMB=4096/g' /etc/waagent.conf
 fi
 
-# Add localhost alias to ::1 IPv6
-sed -i 's/::1 ip6-localhost ip6-loopback/::1     localhost ip6-localhost ip6-loopback/g' /etc/hosts
+if [ "${PACKER_BUILDER_TYPE}" != "docker" ]; then
+    # Add localhost alias to ::1 IPv6
+    sed -i 's/::1 ip6-localhost ip6-loopback/::1     localhost ip6-localhost ip6-loopback/g' /etc/hosts
+fi
 
 # Prepare directory and env variable for toolcache
 AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
