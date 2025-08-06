@@ -21,6 +21,8 @@ prepend_etc_environment_path "/snap/bin"
 # a unix socket may die, restart snapd.service (and therefore snapd.socket)
 # to make sure the socket is alive.
 
-systemctl restart snapd.socket
-systemctl restart snapd
-snap set system refresh.hold="$(date --date='today+60 days' +%Y-%m-%dT%H:%M:%S%:z)"
+if systemctl is-system-running >/dev/null 2>&1; then
+    systemctl restart snapd.socket
+    systemctl restart snapd
+    snap set system refresh.hold="$(date --date='today+60 days' +%Y-%m-%dT%H:%M:%S%:z)"
+fi
