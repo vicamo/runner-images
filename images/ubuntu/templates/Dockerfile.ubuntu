@@ -1,0 +1,37 @@
+ARG BASE_IMAGE=ubuntu
+FROM ${BASE_IMAGE}
+
+RUN \
+	set -e; \
+	export DEBIAN_FRONTEND=noninteractive; \
+	apt-get update --quiet --quiet; \
+	apt-get upgrade --yes; \
+	apt-get install --no-install-recommends --yes \
+		apt-utils \
+		ca-certificates \
+		lsb-release \
+		motd-news-config \
+		rsync \
+		sudo \
+		systemd \
+		wget \
+	; \
+	\
+	if id -a ubuntu >/dev/null 2>&1; then \
+		usermod --login packer --move-home --home /home/packer ubuntu; \
+		groupmod --new-name packer ubuntu; \
+	else \
+		useradd --comment 'Ubuntu' --shell /bin/bash packer; \
+	fi; \
+	echo "packer:packer" | chpasswd; \
+	usermod --append --groups sudo packer; \
+	echo "packer ALL=NOPASSWD: ALL" > /etc/sudoers.d/packer; \
+	chmod 0440 /etc/sudoers.d/packer; \
+	\
+	useradd --comment 'Local Runner Account' --shell /bin/bash runner; \
+	echo "runner:runner" | chpasswd; \
+	usermod --append --groups sudo runner; \
+	echo "runner ALL=NOPASSWD: ALL" > /etc/sudoers.d/runner; \
+	chmod 0440 /etc/sudoers.d/runner
+
+USER packer

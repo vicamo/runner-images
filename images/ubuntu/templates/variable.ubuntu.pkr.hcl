@@ -140,6 +140,10 @@ variable "helper_script_folder" {
   type    = string
   default = "/imagegeneration/helpers"
 }
+variable "cache_folder" {
+  type    = string
+  default = "${env("PACKER_CACHE_DIR")}"
+}
 variable "image_folder" {
   type    = string
   default = "/imagegeneration"

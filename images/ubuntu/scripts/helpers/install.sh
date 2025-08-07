@@ -5,11 +5,28 @@
 ################################################################################
 
 download_with_retry() {
+    local resume="-C - --create-dirs"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+        --no-resume) resume=; shift; ;;
+        *) break;;
+        esac
+    done
+
+    local cache_dir=/var/cache/packer
+    if [ ! -d "$cache_dir" ]; then
+        resume=
+    fi
+
     local url=$1
     local download_path=$2
 
     if [ -z "$download_path" ]; then
-        download_path="/tmp/$(basename "$url")"
+        if [ -z "${resume}" ]; then
+            download_path="/tmp/$(basename "$url")"
+        else
+            download_path="$cache_dir/${url#*//}"
+        fi
     fi
 
     echo "Downloading package from $url to $download_path..." >&2
@@ -19,9 +36,11 @@ download_with_retry() {
 
     for ((retries=20; retries>0; retries--)); do
         attempt_start_time=$(date +%s)
-        if http_code=$(curl -4sSLo "$download_path" "$url" -w '%{http_code}'); then
+        if http_code=$(curl -4sSLo "$download_path" $resume "$url" -w '%{http_code}'); then
             attempt_seconds=$(($(date +%s) - attempt_start_time))
-            if [ "$http_code" -eq 200 ]; then
+            # HTTP 206 Partial Content: download success with specified range
+            # HTTP 416 Range Not Satisfiable: file already completed
+            if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 206 ] || [ "$http_code" -eq 416 ]; then
                 echo "Package downloaded in $attempt_seconds seconds" >&2
                 break
             else
