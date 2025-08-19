@@ -62,6 +62,11 @@ function Test-IsUbuntu24 {
     return (lsb_release -rs) -eq "24.04"
 }
 
+function Test-IsSystemdRunning {
+    & bash -c "systemctl is-system-running >/dev/null 2>&1"
+    return $LASTEXITCODE -eq 0
+}
+
 function Get-ToolsetContent {
     <#
     .SYNOPSIS
