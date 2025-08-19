@@ -247,7 +247,9 @@ $powerShellTools = $installedSoftware.AddHeader("PowerShell Tools")
 $powerShellTools.AddToolVersion("PowerShell", $(Get-PowershellVersion))
 $powerShellTools.AddHeader("PowerShell Modules").AddNodes($(Get-PowerShellModules))
 
-$installedSoftware.AddHeader("Web Servers").AddTable($(Build-WebServersTable))
+if (Test-IsSystemdRunning) {
+    $installedSoftware.AddHeader("Web Servers").AddTable($(Build-WebServersTable))
+}
 
 $androidTools = $installedSoftware.AddHeader("Android")
 $androidTools.AddTable($(Build-AndroidTable))
