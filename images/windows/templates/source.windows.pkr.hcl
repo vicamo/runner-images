@@ -57,4 +57,5 @@ source "docker" "image" {
   windows_container = true
   commit = true
   image  = "mcr.microsoft.com/windows/servercore:${var.source_image_version}"
+  volumes = merge({}, local.docker_cache_volume)
 }

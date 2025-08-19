@@ -21,4 +21,6 @@ locals {
   }
 
   image_properties = local.image_properties_map[var.image_os]
+
+  docker_cache_volume = var.cache_folder != "" ? ({ "${var.cache_folder}" = "C:\\cache\\packer" }) : {}
 }
