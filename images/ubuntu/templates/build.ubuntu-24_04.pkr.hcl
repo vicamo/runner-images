@@ -8,12 +8,16 @@ build {
 
   name = "ubuntu-24_04"
 
+  provisioner "shell-local" {
+    scripts = ["${path.root}/../scripts/build/dump-packer-docker-info.sh"]
+  }
+
   provisioner "shell" {
     execute_command = "sudo sh -c '{{ .Vars }} {{ .Path }}'"
     inline          = ["mkdir ${var.image_folder}", "chmod 777 ${var.image_folder}"]
     override        = {
       docker_image  = {
-        remote_folder = "/var/tmp"
+        remote_folder = "/root"
       }
     }
   }
