@@ -8,9 +8,18 @@ build {
 
   name = "ubuntu-24_04"
 
+  provisioner "shell-local" {
+    scripts = ["${path.root}/../scripts/build/dump-packer-docker-info.sh"]
+  }
+
   provisioner "shell" {
     execute_command = "sudo sh -c '{{ .Vars }} {{ .Path }}'"
     inline          = ["mkdir ${var.image_folder}", "chmod 777 ${var.image_folder}"]
+    override        = {
+      docker_image  = {
+        remote_folder = "/root"
+      }
+    }
   }
 
   provisioner "file" {
@@ -68,6 +77,11 @@ build {
       "mv ${var.image_folder}/docs-gen ${var.image_folder}/SoftwareReport",
       "mv ${var.image_folder}/post-gen ${var.image_folder}/post-generation"
     ]
+    override        = {
+      docker_image  = {
+        remote_folder = "/var/tmp"
+      }
+    }
   }
 
   provisioner "shell" {
@@ -191,6 +205,11 @@ provisioner "shell" {
     execute_command   = "sudo sh -c '{{ .Vars }} {{ .Path }}'"
     expect_disconnect = true
     inline            = ["echo 'Reboot VM'", "sudo reboot"]
+    override        = {
+      docker_image  = {
+        remote_folder = "/var/tmp"
+      }
+    }
   }
 
   provisioner "shell" {
@@ -203,6 +222,11 @@ provisioner "shell" {
   provisioner "shell" {
     environment_vars = ["IMAGE_VERSION=${var.image_version}", "INSTALLER_SCRIPT_FOLDER=${var.installer_script_folder}"]
     inline           = ["pwsh -File ${var.image_folder}/SoftwareReport/Generate-SoftwareReport.ps1 -OutputDirectory ${var.image_folder}", "pwsh -File ${var.image_folder}/tests/RunAll-Tests.ps1 -OutputDirectory ${var.image_folder}"]
+    override        = {
+      docker_image  = {
+        remote_folder = "/var/tmp"
+      }
+    }
   }
 
   provisioner "file" {
@@ -232,6 +256,11 @@ provisioner "shell" {
   provisioner "shell" {
     execute_command = "sudo sh -c '{{ .Vars }} {{ .Path }}'"
     inline          = ["sleep 30", "/usr/sbin/waagent -force -deprovision+user && export HISTSIZE=0 && sync"]
+    override        = {
+      docker_image  = {
+        remote_folder = "/var/tmp"
+      }
+    }
   }
 
 }

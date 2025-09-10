@@ -15,11 +15,15 @@ extract_dotnet_sdk() {
     set -e
     destination="./tmp-$(basename -s .tar.gz $archive_name)"
 
+    # /usr/lib/dotnet/sdk/8.0.118/dotnet.dll
+    local dotnet_base="$(find /usr -name dotnet.dll | head -n 1)"
+    dotnet_base="$(dirname "$(dirname "$(dirname "$dotnet_base")")")"
+
     echo "Extracting $archive_name to $destination"
     mkdir "$destination" && tar -C "$destination" -xzf "$archive_name"
-    rsync -qav --remove-source-files "$destination/shared/" /usr/share/dotnet/shared/
-    rsync -qav --remove-source-files "$destination/host/" /usr/share/dotnet/host/
-    rsync -qav --remove-source-files "$destination/sdk/" /usr/share/dotnet/sdk/
+    rsync -qav --remove-source-files "$destination/shared/" "$dotnet_base"/shared/
+    rsync -qav --remove-source-files "$destination/host/" "$dotnet_base"/host/
+    rsync -qav --remove-source-files "$destination/sdk/" "$dotnet_base"/sdk/
     rm -rf "$destination" "$archive_name"
 }
 

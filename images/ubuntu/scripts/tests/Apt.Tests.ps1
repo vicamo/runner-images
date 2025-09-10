@@ -17,6 +17,7 @@ Describe "Apt" {
             "mercurial"         { $toolName = "hg"; break }
             "findutils"         { $toolName = "find"; break }
             "systemd-coredump"  { $toolName = "coredumpctl"; break }
+            "netcat-openbsd"    { $toolName = "netcat"; break }
         }
 
         (Get-Command -Name $toolName).CommandType | Should -BeExactly "Application"
