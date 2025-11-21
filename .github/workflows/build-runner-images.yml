@@ -70,11 +70,23 @@ jobs:
           Import-Module .\helpers\GenerateResourcesAndImage.ps1
 
           echo "::group::Generate Image"
-          GenerateResourcesAndImage -DockerImageSource -ImageType "${env:IMAGE_TYPE}"
+          GenerateResourcesAndImage -DockerImageSource -ImageType "${env:IMAGE_TYPE}" -OnError "abort"
           echo "::endgroup::"
 
           $readme = Join-Path "images" "${{ steps.preconfig.outputs.image_os }}" "${env:IMAGE_TYPE}-Readme.md"
           Get-Content -Path "$readme" | Out-File -Append -FilePath "$env:GITHUB_STEP_SUMMARY"
+
+      - if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          CONTAINER_ID="$(docker ps --last 1 --format '{{ .ID }}')"
+          docker inspect "${CONTAINER_ID}"
+          docker exec "${CONTAINER_ID}" mount
+          docker exec "${CONTAINER_ID}" id -a
+          docker exec "${CONTAINER_ID}" ls -al /
+          docker exec "${CONTAINER_ID}" ls -al /tmp
+          docker exec "${CONTAINER_ID}" ls -al /var
+          docker exec "${CONTAINER_ID}" ls -al /var/tmp
 
       - name: Upload generated reports
         uses: actions/upload-artifact@v4
