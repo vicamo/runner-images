@@ -51,6 +51,9 @@ source "azure-arm" "image" {
 source "docker" "image" {
   commit = true
   exec_user = "packer:packer"
+  tmpfs = [
+    "/tmp:exec"
+  ]
   build {
     path = "${path.root}/Dockerfile.ubuntu"
     build_dir = "${path.root}"
