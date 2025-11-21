@@ -4,6 +4,10 @@
 ##  Desc:  Configure apt sources with failover from Azure to Ubuntu archives.
 ################################################################################
 
+if [ "${PACKER_BUILDER_TYPE}" != "azure-arm" ]; then
+    exit 0
+fi
+
 source $HELPER_SCRIPTS/os.sh
 
 touch /etc/apt/apt-mirrors.txt

@@ -50,5 +50,18 @@ source "azure-arm" "image" {
 
 source "docker" "image" {
   commit = true
-  image  = "ubuntu:${var.source_image_version}"
+  exec_user = "packer:packer"
+  tmpfs = [
+    "/tmp:exec"
+  ]
+  build {
+    path = "${path.root}/Dockerfile.ubuntu"
+    build_dir = "${path.root}"
+    arguments = {
+      BASE_IMAGE = "ubuntu:${var.source_image_version}"
+    }
+  }
+  changes = [
+    "USER runner"
+  ]
 }
