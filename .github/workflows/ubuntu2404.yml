@@ -6,6 +6,7 @@ on:
     types: labeled
     paths:
     - 'images/ubuntu/**'
+    - '.github/workflows/build-lxd-images.yml'
 
 defaults:
   run:
@@ -14,7 +15,7 @@ defaults:
 jobs:
   Ubuntu_2404:
     if: github.event.label.name == 'CI ubuntu-all' || github.event.label.name == 'CI ubuntu-2404'
-    uses: ./.github/workflows/trigger-ubuntu-win-build.yml
+    uses: ./.github/workflows/build-lxd-images.yml
     with:
       image_type: 'ubuntu2404'
     secrets: inherit

@@ -1,0 +1,122 @@
+name: Build LXD images
+
+on:
+  workflow_call:
+    inputs:
+      image_type:
+        required: true
+        type: string
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ${{ endsWith(inputs.image_type, '-arm64') && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 360
+    env:
+      image_type: ${{ inputs.image_type }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Resolve image
+        id: image
+        run: |
+          [[ "${image_type}" =~ ^ubuntu([0-9]{2})([0-9]{2})(-arm64)?$ ]]
+          {
+            echo "build_name=ubuntu-${BASH_REMATCH[1]}_${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
+            echo "image_os=ubuntu${BASH_REMATCH[1]}${BASH_REMATCH[3]}"
+            echo "image_version=$(date --utc +%Y%m%d).${{ github.run_number }}"
+          } | tee -a "${GITHUB_OUTPUT}"
+
+      - name: Free disk space
+        run: |
+          df -h
+          sudo swapoff -a
+          sudo rm -f /mnt/swapfile
+          docker image prune --all --force
+          sudo rm -rf \
+            /opt/ghc \
+            /opt/hostedtoolcache \
+            /usr/local/.ghcup \
+            /usr/local/lib/android \
+            /usr/local/share/boost \
+            /usr/share/dotnet \
+            /usr/share/swift
+          df -h
+
+      # LXD needs far more room than any single filesystem of the runner has.
+      - name: Merge disks
+        run: |
+          reserve_kb=$((2 * 1024 * 1024))
+          devices=()
+          for dir in "" /mnt; do
+            free_kb=$(df --block-size=1024 --output=avail "${dir:-/}" | tail -n 1)
+            sudo fallocate --length $(((free_kb - reserve_kb) * 1024)) "${dir}/loop.img"
+            devices+=("$(sudo losetup --find --show "${dir}/loop.img")")
+          done
+          sudo pvcreate --force "${devices[@]}"
+          sudo vgcreate vgmerged "${devices[@]}"
+          sudo lvcreate --extents 100%FREE --name lvmerged vgmerged
+          sudo mkfs.ext4 -m 0 /dev/vgmerged/lvmerged
+          sudo mkdir /merged
+          sudo mount /dev/vgmerged/lvmerged /merged
+          df -h /merged
+
+      # The action is in alpha, hence the pinned commit.
+      - name: Setup LXD
+        uses: canonical/setup-lxd@e3ef25fc529b40aa403b264cdf44e7882b361164
+        with:
+          channel: 5.21/stable
+          preseed: |
+            config:
+              images.compression_algorithm: none
+            storage_pools:
+            - name: default
+              driver: dir
+              config:
+                source: /merged/lxd
+            networks:
+            - name: lxdbr0
+              type: bridge
+              config:
+                ipv4.address: auto
+                ipv6.address: none
+            profiles:
+            - name: default
+              devices:
+                root:
+                  path: /
+                  pool: default
+                  type: disk
+                eth0:
+                  name: eth0
+                  network: lxdbr0
+                  type: nic
+
+      # Keep exported images off the root filesystem as well.
+      - name: Move LXD images
+        run: |
+          lxc storage volume create default images
+          lxc config set storage.images_volume default/images
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3.4.0
+        with:
+          version: 1.16.1
+
+      - name: Build LXD image
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          packer plugins install github.com/hashicorp/lxd 1.0.3
+          packer build -color=false \
+            -only="${{ steps.image.outputs.build_name }}.*" \
+            -var image_os=${{ steps.image.outputs.image_os }} \
+            -var image_version=${{ steps.image.outputs.image_version }} \
+            images/ubuntu/templates
