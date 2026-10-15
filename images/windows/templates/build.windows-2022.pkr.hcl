@@ -39,6 +39,7 @@ build {
   }
 
   provisioner "windows-shell" {
+    execute_command = "& { cmd.exe /c '{{ .Vars }}\"{{ .Path }}\"'; exit $LASTEXITCODE }"
     inline = [
       "net user ${var.install_user} ${var.install_password} /passwordchg:no /passwordreq:yes /active:yes /Y",
       "winrm set winrm/config/service/auth @{Basic=\"true\"}",
@@ -141,6 +142,7 @@ build {
   }
 
   provisioner "windows-shell" {
+    execute_command = "& { cmd.exe /c '{{ .Vars }}\"{{ .Path }}\"'; exit $LASTEXITCODE }"
     inline = ["wmic product where \"name like '%%microsoft azure powershell%%'\" call uninstall /nointeractive"]
   }
 
