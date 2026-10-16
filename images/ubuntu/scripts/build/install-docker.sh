@@ -73,37 +73,38 @@ done
 gid=$(cut -d ":" -f 3 /etc/group | grep "^1..$" | sort -n | tail -n 1 | awk '{ print $1+1 }')
 groupmod -g "$gid" docker
 
-# Create systemd-tmpfiles configuration for Docker
-cat <<EOF | sudo tee /etc/tmpfiles.d/docker.conf
+if [[ ! -f /.dockerenv ]]; then
+    # Create systemd-tmpfiles configuration for Docker
+    cat <<EOF | sudo tee /etc/tmpfiles.d/docker.conf
 L /run/docker.sock - - - - root docker 0770
 EOF
 
-# Reload systemd-tmpfiles to apply the new configuration
-systemd-tmpfiles --create /etc/tmpfiles.d/docker.conf
+    # Reload systemd-tmpfiles to apply the new configuration
+    systemd-tmpfiles --create /etc/tmpfiles.d/docker.conf
 
-# Enable docker.service
-systemctl is-active --quiet docker.service || systemctl start docker.service
-systemctl is-enabled --quiet docker.service || systemctl enable docker.service
+    # Enable docker.service
+    systemctl is-active --quiet docker.service || systemctl start docker.service
+    systemctl is-enabled --quiet docker.service || systemctl enable docker.service
 
-# Docker daemon takes time to come up after installing
-sleep 10
-docker info
+    # Docker daemon takes time to come up after installing
+    sleep 10
+    docker info
 
-if ! is_ubuntu22; then
-    # Pull Dependabot docker image
-    docker pull ghcr.io/dependabot/dependabot-updater-core:latest
+    if ! is_ubuntu22; then
+        # Pull Dependabot docker image
+        docker pull ghcr.io/dependabot/dependabot-updater-core:latest
 
-    # Pull AW docker images
-    docker pull ghcr.io/github/gh-aw-mcpg:latest
-    docker pull ghcr.io/github/gh-aw-firewall/agent:latest
-    docker pull ghcr.io/github/gh-aw-firewall/api-proxy:latest
-    docker pull ghcr.io/github/gh-aw-firewall/squid:latest
-    docker pull ghcr.io/github/github-mcp-server:latest
+        # Pull AW docker images
+        docker pull ghcr.io/github/gh-aw-mcpg:latest
+        docker pull ghcr.io/github/gh-aw-firewall/agent:latest
+        docker pull ghcr.io/github/gh-aw-firewall/api-proxy:latest
+        docker pull ghcr.io/github/gh-aw-firewall/squid:latest
+        docker pull ghcr.io/github/github-mcp-server:latest
+    fi
 fi
 
 # Download amazon-ecr-credential-helper
-aws_latest_release_url="https://api.github.com/repos/awslabs/amazon-ecr-credential-helper/releases/latest"
-aws_helper_url=$(curl -fsSL "${aws_latest_release_url}" | jq -r '.body' | awk -F'[()]' '/linux-'"${docker_arch}"'/ {print $2}')
+aws_helper_url=$(get_github_api_json "repos/awslabs/amazon-ecr-credential-helper/releases/latest" | jq -r '.body' | awk -F'[()]' '/linux-'"${docker_arch}"'/ {print $2}')
 aws_helper_binary_path=$(download_with_retry "$aws_helper_url")
 
 # Supply chain security - amazon-ecr-credential-helper

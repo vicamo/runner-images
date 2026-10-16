@@ -11,6 +11,10 @@ on:
         description: Hosted runner matching the build OS and architecture
         required: true
         type: string
+      image_version:
+        description: Version recorded in the image metadata
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -41,27 +45,118 @@ jobs:
           'formats=["docker"]' >> $env:GITHUB_OUTPUT
 
   build:
+    name: ${{ inputs.image_type }} (${{ matrix.format }})${{ startsWith(inputs.image_type, 'windows') && endsWith(inputs.image_type, '-arm64') && ' [known failure]' || '' }}
     needs: capabilities
     runs-on: ${{ inputs.runner }}
+    continue-on-error: ${{ startsWith(inputs.image_type, 'windows') && endsWith(inputs.image_type, '-arm64') }}
     timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
         format: ${{ fromJSON(needs.capabilities.outputs.formats) }}
     steps:
+      - name: Explain Windows ARM64 known failure
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        shell: pwsh
+        run: |
+          @'
+          ### Known failure: Windows ARM64 Docker build
+
+          Packer 1.16.1 has no Windows ARM64 binary, and the hosted runner has no Docker installation.
+          This build is still attempted, but its failure is allowed while Windows ARM64 support remains unresolved.
+          '@ >> $env:GITHUB_STEP_SUMMARY
+
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Show build implementation status
+      - name: Prepare image storage
+        uses: ./.github/actions/prepare-image-storage
+
+      - name: Set up LXD
+        if: matrix.format == 'lxd' || matrix.format == 'vm'
+        uses: ./.github/actions/setup-lxd
+        with:
+          instance-type: ${{ matrix.format == 'vm' && 'vm' || 'container' }}
+
+      - name: Resolve image type
         shell: pwsh
         env:
           IMAGE_TYPE: ${{ inputs.image_type }}
-          IMAGE_FORMAT: ${{ matrix.format }}
         run: |
-          @"
-          Image build scaffold: $env:IMAGE_TYPE / $env:IMAGE_FORMAT
+          $imageOS = ($env:IMAGE_TYPE -replace '-arm64$', '').Replace('-', '_')
+          $architecture = if ($env:RUNNER_ARCH -eq 'ARM64') { 'arm64' } else { 'amd64' }
+          $name = '{0}_{1}_{2}' -f $imageOS, $architecture, '${{ matrix.format }}'
+          $textInfo = [Globalization.CultureInfo]::InvariantCulture.TextInfo
+          $imageType = ($name.Split('_') | ForEach-Object { $textInfo.ToTitleCase($_) }) -join '_'
+          "IMAGE_TYPE=$imageType" >> $env:GITHUB_ENV
 
-          No image is built or published by this scaffold.
-          Following commits will wire platform-specific storage and builder setup,
-          Packer provisioning and upstream tests, reports, and OCI packaging.
-          "@ >> $env:GITHUB_STEP_SUMMARY
+      - name: Set up Packer
+        uses: hashicorp/setup-packer@v3.4.0
+        with:
+          version: 1.16.1
+
+      - name: Build image
+        id: build
+        shell: pwsh
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ github.token }}
+          PKR_VAR_github_token: ${{ github.token }}
+          PKR_VAR_image_version: ${{ inputs.image_version }}
+          PACKER_NO_COLOR: 1
+        run: |
+          Import-Module ./helpers/GenerateResourcesAndImage.ps1
+          GenerateResourcesAndImage -ImageType $env:IMAGE_TYPE -OnError cleanup
+          $template = Get-PackerTemplate -RepositoryRoot $pwd -ImageType $env:IMAGE_TYPE
+          "build_name=$($template.BuildName)" >> $env:GITHUB_OUTPUT
+          "image_os=$($template.ImageOS)" >> $env:GITHUB_OUTPUT
+          "backend=$($template.Backend)" >> $env:GITHUB_OUTPUT
+          "instance_type=$($template.InstanceType)" >> $env:GITHUB_OUTPUT
+          if ($template.Backend -eq 'docker') {
+              $manifest = Get-Content -Raw packer-manifest.json | ConvertFrom-Json
+              $builds = @($manifest.builds | Where-Object {
+                  $_.packer_run_uuid -eq $manifest.last_run_uuid -and
+                  $_.builder_type -eq 'docker' -and $_.custom_data.image_os -eq $template.ImageOS
+              })
+              if (-not $manifest.last_run_uuid -or $builds.Count -ne 1 -or
+                  $builds[0].artifact_id -notmatch '^sha256:[0-9a-f]{64}$') {
+                  throw 'Packer manifest must identify exactly one committed Docker image.'
+              }
+              "image=$($builds[0].artifact_id)" >> $env:GITHUB_OUTPUT
+          } else {
+              $alias = $template.ImageOS
+              if ($template.InstanceType -eq 'vm') { $alias += '-vm' }
+              "image=$alias" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Collect image reports
+        if: matrix.format == 'lxd' || matrix.format == 'vm'
+        uses: ./.github/actions/collect-image-reports
+        with:
+          image-type: ${{ env.IMAGE_TYPE }}
+          build-name: ${{ steps.build.outputs.build_name }}
+
+      - name: Test built Ubuntu image workflows
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/test-image-workflow
+        with:
+          image-type: ${{ env.IMAGE_TYPE }}
+          image-os: ${{ steps.build.outputs.image_os }}
+          backend: ${{ steps.build.outputs.backend }}
+          instance-type: ${{ steps.build.outputs.instance_type }}
+
+      - name: Export OCI image
+        id: export
+        uses: ./.github/actions/export-oci-image
+        with:
+          image: ${{ steps.build.outputs.image }}
+          backend: ${{ steps.build.outputs.backend }}
+          instance-type: ${{ steps.build.outputs.instance_type }}
+          architecture: ${{ runner.arch == 'ARM64' && 'arm64' || 'amd64' }}
+          title: ${{ env.IMAGE_TYPE }}
+          output-directory: ${{ runner.os == 'Linux' && '/merged/oci/image' || format('{0}/oci/image', runner.temp) }}
+
+      - name: Report OCI image details
+        uses: ./.github/actions/report-oci-image
+        with:
+          layout-directory: ${{ steps.export.outputs.directory }}
+          instance-type: ${{ steps.build.outputs.instance_type }}

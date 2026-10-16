@@ -19,11 +19,6 @@ set_etc_environment_variable "ACCEPT_EULA" "Y"
 mkdir -p /etc/skel/.config/configstore
 set_etc_environment_variable "XDG_CONFIG_HOME" '$HOME/.config'
 
-# Change waagent entries to use /mnt for swap file
-sed -i 's/ResourceDisk.Format=n/ResourceDisk.Format=y/g' /etc/waagent.conf
-sed -i 's/ResourceDisk.EnableSwap=n/ResourceDisk.EnableSwap=y/g' /etc/waagent.conf
-sed -i 's/ResourceDisk.SwapSizeMB=0/ResourceDisk.SwapSizeMB=4096/g' /etc/waagent.conf
-
 # Ephemeral-OS VMs have no Azure resource disk, so cloud-init's default /mnt mount waits ~90s
 # at boot for a device that never appears. Cap that wait via cloud-init, which rewrites
 # /etc/fstab on every boot (so a direct fstab edit would not survive).
@@ -34,7 +29,9 @@ mounts:
 EOF
 
 # Add localhost alias to ::1 IPv6
-sed -i 's/::1 ip6-localhost ip6-loopback/::1     localhost ip6-localhost ip6-loopback/g' /etc/hosts
+if [ ! -f /.dockerenv ]; then
+    sed -i 's/::1 ip6-localhost ip6-loopback/::1     localhost ip6-localhost ip6-loopback/g' /etc/hosts
+fi
 
 # Prepare directory and env variable for toolcache
 AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
@@ -72,32 +69,37 @@ if ! is_ubuntu22; then
     echo 'ACTION=="add|change", KERNEL=="sd*|nvme*n*", ATTR{queue/read_ahead_kb}="128"' | tee "$readahead_rule"
 fi
 
-# Relax root filesystem durability guarantees to speed up I/O heavy workloads. Runner VMs are
-# ephemeral, so losing recent writes on an unclean shutdown is acceptable.
-# data= and journal_async_commit can only be set on the initial mount performed by the initramfs,
-# so they have to be passed through rootflags on the kernel command line rather than through fstab.
-root_fs_type=$(findmnt --noheadings --first-only --output FSTYPE --target /)
-if [[ "$root_fs_type" != "ext4" ]]; then
-    echo "Expected an ext4 root filesystem but found '${root_fs_type}', refusing to set ext4 rootflags"
-    exit 1
-fi
+# A container has neither a kernel command line nor grub.
+if ! systemd-detect-virt --container --quiet; then
+    # Relax root filesystem durability guarantees to speed up I/O heavy workloads. Runner VMs are
+    # ephemeral, so losing recent writes on an unclean shutdown is acceptable.
+    # data= and journal_async_commit can only be set on the initial mount performed by the initramfs,
+    # so they have to be passed through rootflags on the kernel command line rather than through fstab.
+    root_fs_type=$(findmnt --noheadings --first-only --output FSTYPE --target /)
+    if [[ "$root_fs_type" != "ext4" ]]; then
+        echo "Expected an ext4 root filesystem but found '${root_fs_type}', refusing to set ext4 rootflags"
+        exit 1
+    fi
 
-grub_dropin='/etc/default/grub.d/99-runner-performance.cfg'
-mkdir -p "$(dirname "$grub_dropin")"
-echo 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT rootflags=nobarrier,data=writeback,journal_async_commit,commit=30"' | tee "$grub_dropin"
-update-grub
+    grub_dropin='/etc/default/grub.d/99-runner-performance.cfg'
+    mkdir -p "$(dirname "$grub_dropin")"
+    echo 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT rootflags=nobarrier,data=writeback,journal_async_commit,commit=30"' | tee "$grub_dropin"
+    update-grub
+fi
 
 # Create symlink for tests running
 chmod +x $HELPER_SCRIPTS/invoke-tests.sh
 ln -s $HELPER_SCRIPTS/invoke-tests.sh /usr/local/bin/invoke_tests
 
 # Disable motd updates metadata
-sed -i 's/ENABLED=1/ENABLED=0/g' /etc/default/motd-news
+if [ -f /etc/default/motd-news ]; then
+    sed -i 's/ENABLED=1/ENABLED=0/g' /etc/default/motd-news
+fi
 
 # Remove fwupd if installed. We're running on VMs in Azure and the fwupd package is not needed.
 # Leaving it enabled means periodic refreshes show in network traffic and firewall logs
 # Check if fwupd-refresh.timer exists in systemd
-if systemctl list-unit-files fwupd-refresh.timer &>/dev/null; then
+if [ -d /run/systemd/system ] && systemctl list-unit-files fwupd-refresh.timer &>/dev/null; then
     echo "Masking fwupd-refresh.timer..."
     systemctl mask fwupd-refresh.timer
 fi
@@ -115,5 +117,7 @@ if is_ubuntu22; then
 fi
 
 # Disable man-db auto update
-echo "set man-db/auto-update false" | debconf-communicate
-dpkg-reconfigure man-db
+if [ "$(dpkg-query -W -f='${Status}' man-db 2>/dev/null)" = "install ok installed" ]; then
+    echo "set man-db/auto-update false" | debconf-communicate
+    dpkg-reconfigure man-db
+fi

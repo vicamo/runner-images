@@ -47,6 +47,10 @@
   blocking independent LXD jobs/releases. Defer Docker compatibility fixes to
   later commits; never publish a failed or untested build as a successful image.
 - PR validation includes packaging and upstream image tests, without publication.
+- Before export, run an act workflow in a disposable instance of each built
+  Ubuntu image, using the existing `packer` account. Cover checkout, JavaScript
+  action outputs, Python and a compiled CMake project. Remove the test instance
+  before exporting the image; keep credentials confined to the test instance.
 - LXD VM jobs require KVM. Detect capabilities before constructing the matrix
   and skip VM jobs when KVM is unavailable, with an explicit summary rather than
   failing otherwise supported builds. Release orchestration must tolerate those
@@ -67,10 +71,11 @@
   a reference. Audit Linux root execution, uploads, systemd and boot assumptions,
   and Windows restart, servicing and Sysprep assumptions as failures arise.
   Windows Docker jobs require compatible Windows hosts and container base images.
-- LXD artifacts stored in OCI must preserve what LXD needs to import them:
-  metadata and rootfs for containers, metadata and disk for virtual machines.
+- LXD container exports become runnable OCI filesystem images with metadata
+  retained in an image label. VM artifacts preserve metadata and the complete
+  disk for LXD import or standalone QEMU use.
   Extracting a VM rootfs into a runnable Docker image does not preserve a VM.
-- Use ORAS to publish and retrieve LXD OCI artifacts with independent payload
+- Use ORAS to publish and retrieve VM OCI artifacts with independent payload
   blobs. Preserve the exported metadata tarball, including any templates, and
   the complete qcow2 disk for VMs. Split large payloads into ordered chunks
   below registry limits and record their sizes, order and checksums.
@@ -80,16 +85,37 @@
   compression, ordered chunk references and the reconstructed disk checksum.
   Reuse OCI descriptor digests and sizes rather than unnecessarily duplicating
   them. Helpers reject unsupported schemas and verify blobs and the final disk.
-- Chunk size, compression and sparse-file handling remain to be decided during
-  packaging implementation.
+- Provide standalone `lxd-image-to-oci`, `lxd-vm-image-to-oci` and
+  `docker-image-to-oci` commands with generic source, platform, output and size
+  arguments. Keep repository image names and CI outputs in workflow glue.
+  The container commands produce directly pullable OCI images with valid tar
+  layers; the VM command produces ordered byte chunks with reconstruction data.
+  Initially use 1 GiB layer/chunk limits. Fail explicitly for individual tar
+  entries that cannot fit; Windows layers stay intact within the size limit.
+  Stream local LXD tar exports and Docker save streams without complete
+  intermediate archives. SquashFS conversion temporarily stages its compressed
+  input for random access, without extracting a second rootfs tree.
+  Final local blobs still require image-sized storage; streaming registry upload
+  and chunk disposal are separate publication work.
+  The contracts are documented in `docs/image-oci-artifacts.md`.
+- Log and summarize exported file sizes and allocated disk usage, metadata
+  archive contents, and VM disk format, virtual size, partitions and filesystems.
+  Inspect VM disks through a read-only NBD view of the chunks instead of
+  assembling another disk. OCI packaging must log and summarize blob counts, media types,
+  digests, individual sizes and total payload bytes from manifest descriptors.
 - The download helper streams chunks directly into the final disk file rather
   than storing chunks and an assembled copy. LXD import may still require
   separate storage for its managed disk.
 - Rewrite the original VM-to-rootfs helper later in the VM packaging commit.
   Do not assume a single partition or discard boot partitions. Defer additional
   LXD import/boot and standalone QEMU tests; use upstream image tests for now.
-- Docker outputs are native runnable container images with explicit user,
-  environment, working directory and command configuration.
+- Use backend-neutral names for shared OCI export, reporting and verification
+  tooling. Keep backend-specific names for adapters and payload formats.
+- Docker outputs are directly pullable native container images with explicit
+  user, environment, working directory and command configuration. Preserve
+  valid filesystem tar layers; arbitrary byte chunks of a Docker save archive
+  are not the Docker export format. Preserve runtime configuration while
+  repacking Linux filesystem layers within the configured size limit.
 - Validate layer size limits, including individual oversized files, available
   disk space, filesystem metadata preservation and import/runtime behavior.
 
@@ -207,8 +233,9 @@ OCI moving tag:      <image_type>-latest
 
 - Reuse upstream's Pester software and system tests during provisioning rather
   than duplicating that suite. Stick to those image acceptance tests initially.
-  Defer new artifact launch/import tests, standalone QEMU boot tests and Docker
-  runtime tests. Local workflow and packaging-helper validation still applies.
+  Keep act smoke tests of daemon-managed Ubuntu images separate from artifact
+  download/import tests and standalone QEMU boot tests, which remain deferred.
+  Local workflow and packaging-helper validation still applies.
 - Later add an
   end-to-end runner test for trusted CI or release builds: launch a disposable
   instance from the finished artifact, install and register an ephemeral GitHub
