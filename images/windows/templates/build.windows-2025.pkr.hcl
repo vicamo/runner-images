@@ -40,8 +40,7 @@ build {
 
   provisioner "windows-shell" {
     inline = [
-      "net user ${var.install_user} ${var.install_password} /add /passwordchg:no /passwordreq:yes /active:yes /Y",
-      "net localgroup Administrators ${var.install_user} /add",
+      "net user ${var.install_user} ${var.install_password} /passwordchg:no /passwordreq:yes /active:yes /Y",
       "winrm set winrm/config/service/auth @{Basic=\"true\"}",
       "winrm get winrm/config/service/auth"
     ]
