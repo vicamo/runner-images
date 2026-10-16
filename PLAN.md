@@ -47,6 +47,10 @@
   blocking independent LXD jobs/releases. Defer Docker compatibility fixes to
   later commits; never publish a failed or untested build as a successful image.
 - PR validation includes packaging and upstream image tests, without publication.
+- Before export, run an act workflow in a disposable instance of each built
+  Ubuntu image, using the existing `packer` account. Cover checkout, JavaScript
+  action outputs, Python and a compiled CMake project. Remove the test instance
+  before exporting the image; keep credentials confined to the test instance.
 - LXD VM jobs require KVM. Detect capabilities before constructing the matrix
   and skip VM jobs when KVM is unavailable, with an explicit summary rather than
   failing otherwise supported builds. Release orchestration must tolerate those
@@ -207,8 +211,9 @@ OCI moving tag:      <image_type>-latest
 
 - Reuse upstream's Pester software and system tests during provisioning rather
   than duplicating that suite. Stick to those image acceptance tests initially.
-  Defer new artifact launch/import tests, standalone QEMU boot tests and Docker
-  runtime tests. Local workflow and packaging-helper validation still applies.
+  Keep act smoke tests of daemon-managed Ubuntu images separate from artifact
+  download/import tests and standalone QEMU boot tests, which remain deferred.
+  Local workflow and packaging-helper validation still applies.
 - Later add an
   end-to-end runner test for trusted CI or release builds: launch a disposable
   instance from the finished artifact, install and register an ephemeral GitHub
