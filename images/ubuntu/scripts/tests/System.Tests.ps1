@@ -1,6 +1,8 @@
+Import-Module "$PSScriptRoot/../helpers/Common.Helpers.psm1"
+
 # The $env:AGENT_NAME and $env:RUNNER_NAME are predefined variables for the ADO pipelines and for the GitHub actions respectively.
 # If the test is running on the ADO pipeline or on the GitHub actions, the test will be skipped
-Describe "Disk free space" -Skip:(-not [String]::IsNullOrEmpty($env:AGENT_NAME) -or -not [String]::IsNullOrEmpty($env:RUNNER_NAME)) {
+Describe "Disk free space" -Skip:((Test-IsDockerContainer) -or -not [String]::IsNullOrEmpty($env:AGENT_NAME) -or -not [String]::IsNullOrEmpty($env:RUNNER_NAME)) {
     It "Image has enough free space" {
         $diskInfo = Get-PSDrive "/"
         $totalSpaceGB = [math]::Floor(($diskInfo.Used + $diskInfo.Free) / 1GB)
@@ -47,7 +49,8 @@ Describe "ReadAhead udev rule" -Skip:(Test-IsUbuntu22) {
         $content | Should -Match 'ATTR\{queue/read_ahead_kb\}="128"'
     }
 
-    It "All SCSI and NVMe devices have read_ahead_kb set to 128" {
+    # A container sees the block devices of its host
+    It "All SCSI and NVMe devices have read_ahead_kb set to 128" -Skip:(Test-IsContainer) {
         $devices = Get-ChildItem "/sys/block/sd*/queue/read_ahead_kb", "/sys/block/nvme*n*/queue/read_ahead_kb" -ErrorAction SilentlyContinue
         $devices | Should -Not -BeNullOrEmpty -Because "there should be at least one sd* or nvme* block device"
         foreach ($dev in $devices) {
@@ -57,7 +60,8 @@ Describe "ReadAhead udev rule" -Skip:(Test-IsUbuntu22) {
     }
 }
 
-Describe "Root filesystem performance options" {
+# A container has no grub and sees the kernel command line and the mounts of its host
+Describe "Root filesystem performance options" -Skip:(Test-IsContainer) {
     It "GRUB drop-in sets the root filesystem mount options" {
         $content = Get-Content "/etc/default/grub.d/99-runner-performance.cfg" -Raw
         $content | Should -Match "rootflags=nobarrier,data=writeback,journal_async_commit,commit=30"
@@ -69,7 +73,11 @@ Describe "Root filesystem performance options" {
     }
 
     It "Root filesystem is mounted with the relaxed durability options" {
-        $mountOptions = (findmnt --noheadings --first-only --output OPTIONS --target /) -split ","
+        # Mount tables omit defaults; Ubuntu's KVM kernel defaults to commit=30.
+        # Resolve the device number because the mount source can be /dev/root.
+        $rootDeviceNumber = (findmnt --noheadings --first-only --output MAJ:MIN --target /).Trim()
+        $rootDevice = Split-Path -Leaf (readlink -f "/sys/dev/block/$rootDeviceNumber")
+        $mountOptions = Get-Content "/proc/fs/ext4/$rootDevice/options" -ErrorAction Stop
         $mountOptions | Should -Contain "data=writeback"
         $mountOptions | Should -Contain "commit=30"
     }

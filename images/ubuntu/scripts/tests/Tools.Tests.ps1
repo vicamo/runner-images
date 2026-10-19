@@ -67,15 +67,16 @@ Describe "Rust" {
 
 Describe "Docker" {
     It "docker client" {
+        $command = if (Test-IsDockerContainer) { "docker --version" } else { "sudo docker version --format '{{.Client.Version}}'" }
         $version=(Get-ToolsetContent).docker.components | Where-Object { $_.package -eq 'docker-ce-cli' } | Select-Object -ExpandProperty version
         If ($version -ne "latest") {
-            $(sudo docker version --format '{{.Client.Version}}') | Should -BeLike "*$version*"
+            ((Get-CommandResult $command).Output) | Should -BeLike "*$version*"
         }else{
-            "sudo docker version --format '{{.Client.Version}}'" | Should -ReturnZeroExitCode
+            $command | Should -ReturnZeroExitCode
         }
     }
 
-    It "docker server" {
+    It "docker server" -Skip:(Test-IsDockerContainer) {
         $version=(Get-ToolsetContent).docker.components | Where-Object { $_.package -eq 'docker-ce' } | Select-Object -ExpandProperty version
         If ($version -ne "latest") {
             $(sudo docker version --format '{{.Server.Version}}') | Should -BeLike "*$version*"
@@ -84,7 +85,7 @@ Describe "Docker" {
         }
     }
 
-    It "docker client/server versions match" {
+    It "docker client/server versions match" -Skip:(Test-IsDockerContainer) {
         $clientVersion = $(sudo docker version --format '{{.Client.Version}}')
         $serverVersion = $(sudo docker version --format '{{.Server.Version}}')
         $clientVersion | Should -Be $serverVersion
@@ -323,6 +324,13 @@ Describe "Containers" {
 
     # https://github.com/actions/runner-images/issues/7753
     It "podman networking" -TestCases "podman CNI plugins" {
+        ip link add dummy0 type dummy
+        if ($LASTEXITCODE -ne 0) {
+            Set-ItResult -Skipped -Because "Creating network interfaces is unavailable in this build environment."
+            return
+        }
+        "ip link delete dummy0" | Should -ReturnZeroExitCode
+
         "podman network create -d bridge test-net" | Should -ReturnZeroExitCode
         "podman network ls" | Should -Not -OutputTextMatchingRegex "Error"
         "podman network rm test-net" | Should -ReturnZeroExitCode
@@ -337,9 +345,15 @@ Describe "Containers" {
     # https://github.com/actions/runner-images/issues/14406
     # registries.conf must be valid v2 format; a v1 file is rejected by newer podman.
     It "podman registries.conf" {
-        "podman info" | Should -ReturnZeroExitCode
-        "podman info" | Should -OutputTextMatchingRegex "docker.io"
-        "podman info" | Should -OutputTextMatchingRegex "quay.io"
+        $podmanInfo = Get-CommandResult "podman info" -ValidateExitCode $false
+        if ($podmanInfo.ExitCode -ne 0 -and $podmanInfo.Output -match "cannot clone: Operation not permitted") {
+            Set-ItResult -Skipped -Because "Creating Podman namespaces is unavailable in this build environment."
+            return
+        }
+
+        $podmanInfo.ExitCode | Should -Be 0 -Because $podmanInfo.Output
+        $podmanInfo.Output | Should -Match "docker.io"
+        $podmanInfo.Output | Should -Match "quay.io"
     }
 
     # https://github.com/actions/runner-images/issues/14477

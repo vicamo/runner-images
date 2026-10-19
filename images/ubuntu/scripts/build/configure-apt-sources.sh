@@ -13,13 +13,23 @@ printf "https://archive.ubuntu.com/ubuntu/\tpriority:2\n" | tee -a /etc/apt/apt-
 printf "https://security.ubuntu.com/ubuntu/\tpriority:3\n" | tee -a /etc/apt/apt-mirrors.txt
 
 if ! is_ubuntu22; then
-    sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu/|mirror+file:/etc/apt/apt-mirrors.txt|' /etc/apt/sources.list.d/ubuntu.sources
+    # Ubuntu 26.04 serves arm64 from the main archive, including Docker bases
+    # that still ship sources pointing to the ports archive.
+    if is_ubuntu26; then
+        sed -i -E 's|https?://ports\.ubuntu\.com/ubuntu-ports/?|mirror+file:/etc/apt/apt-mirrors.txt|g' /etc/apt/sources.list.d/ubuntu.sources
+    fi
+
+    sed -i -E 's|http://(azure\.)?archive\.ubuntu\.com/ubuntu/?|mirror+file:/etc/apt/apt-mirrors.txt|' /etc/apt/sources.list.d/ubuntu.sources
 
     # Apt changes to survive Cloud Init
-    cp -f /etc/apt/sources.list.d/ubuntu.sources  /etc/cloud/templates/sources.list.ubuntu.deb822.tmpl
+    if [ -d /etc/cloud/templates ]; then
+        cp -f /etc/apt/sources.list.d/ubuntu.sources  /etc/cloud/templates/sources.list.ubuntu.deb822.tmpl
+    fi
 else
-    sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu/|mirror+file:/etc/apt/apt-mirrors.txt|' /etc/apt/sources.list
+    sed -i -E 's|http://(azure\.)?archive\.ubuntu\.com/ubuntu/?|mirror+file:/etc/apt/apt-mirrors.txt|' /etc/apt/sources.list
 
     # Apt changes to survive Cloud Init
-    cp -f /etc/apt/sources.list /etc/cloud/templates/sources.list.ubuntu.tmpl
+    if [ -d /etc/cloud/templates ]; then
+        cp -f /etc/apt/sources.list /etc/cloud/templates/sources.list.ubuntu.tmpl
+    fi
 fi
