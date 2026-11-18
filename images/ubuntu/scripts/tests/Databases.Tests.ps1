@@ -1,5 +1,7 @@
+Import-Module "$PSScriptRoot/../helpers/Common.Helpers.psm1"
+
 Describe "PostgreSQL" {
-    It "PostgreSQL Service" {
+    It "PostgreSQL Service" -Skip:(Test-IsDockerContainer) {
         "sudo systemctl start postgresql" | Should -ReturnZeroExitCode
         "pg_isready" | Should -OutputTextMatchingRegex "/var/run/postgresql:5432 - accepting connections"
         "sudo systemctl stop postgresql" | Should -ReturnZeroExitCode
@@ -10,7 +12,15 @@ Describe "PostgreSQL" {
         # Client version
         (psql --version).split()[-1] | Should -BeLike "$toolsetVersion*"
         # Server version
-        (pg_config --version).split()[-1] | Should -BeLike "$toolsetVersion*"
+        if (-not (Test-IsDockerContainer)) {
+            (pg_config --version).split()[-1] | Should -BeLike "$toolsetVersion*"
+        }
+    }
+
+    It "PostgreSQL client development tools" {
+        # Without a server, pg_config reports the independently versioned libpq-dev.
+        "pg_config --version" | Should -ReturnZeroExitCode
+        Test-Path "$(pg_config --includedir)/libpq-fe.h" | Should -BeTrue
     }
 }
 
@@ -19,7 +29,7 @@ Describe "MySQL" {
         "mysql -V" | Should -ReturnZeroExitCode
     }
 
-    It "MySQL Service" {
+    It "MySQL Service" -Skip:(Test-IsDockerContainer) {
         "sudo systemctl start mysql" | Should -ReturnZeroExitCode
         mysql -s -N -h localhost -uroot -proot -e "select count(*) from mysql.user where user='root' and authentication_string is null;" | Should -BeExactly 0
         "sudo mysql -vvv -e 'CREATE DATABASE smoke_test' -uroot -proot" | Should -ReturnZeroExitCode

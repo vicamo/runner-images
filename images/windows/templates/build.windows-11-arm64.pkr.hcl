@@ -1,5 +1,5 @@
 build {
-  sources = ["source.azure-arm.image"]
+  sources = ["source.docker.container"]
   name = "windows-11-arm64"
 
   provisioner "powershell" {
@@ -39,9 +39,9 @@ build {
   }
 
   provisioner "windows-shell" {
+    execute_command = "& { cmd.exe /c '{{ .Vars }}\"{{ .Path }}\"'; exit $LASTEXITCODE }"
     inline = [
-      "net user ${var.install_user} ${var.install_password} /add /passwordchg:no /passwordreq:yes /active:yes /Y",
-      "net localgroup Administrators ${var.install_user} /add",
+      "net user ${var.install_user} ${var.install_password} /passwordchg:yes /passwordreq:yes /active:yes /Y || exit /b 1",
       "winrm set winrm/config/service/auth @{Basic=\"true\"}",
       "winrm get winrm/config/service/auth"
     ]
@@ -59,11 +59,6 @@ build {
       "Set-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon' -Name DefaultUsername -Value \"${var.install_user}\" -type String",
       "Set-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon' -Name DefaultPassword -Value \"${var.install_password}\" -type String",
     ]
-  }
-
-  provisioner "windows-restart" {
-    check_registry  = true
-    restart_timeout = "10m"
   }
 
   provisioner "powershell" {
@@ -88,12 +83,6 @@ build {
     ]
   }
 
-  provisioner "windows-restart" {
-    check_registry        = true
-    restart_check_command = "powershell -command \"& {while ( (Get-WindowsOptionalFeature -Online -FeatureName Containers -ErrorAction SilentlyContinue).State -ne 'Enabled' ) { Start-Sleep 30; Write-Output 'InProgress' }}\""
-    restart_timeout       = "10m"
-  }
-
   provisioner "powershell" {
     inline = ["Set-Service -Name wlansvc -StartupType Manual", "if ($(Get-Service -Name wlansvc).Status -eq 'Running') { Stop-Service -Name wlansvc}"]
   }
@@ -106,10 +95,6 @@ build {
     ]
   }
 
-  provisioner "windows-restart" {
-    restart_timeout = "30m"
-  }
-
   provisioner "powershell" {
     elevated_password = "${var.install_password}"
     elevated_user     = "${var.install_user}"
@@ -119,11 +104,6 @@ build {
       "${path.root}/../scripts/build/Install-KubernetesTools.ps1"
     ]
     valid_exit_codes  = [0, 3010]
-  }
-
-  provisioner "windows-restart" {
-    check_registry  = true
-    restart_timeout = "10m"
   }
 
   provisioner "powershell" {
@@ -142,10 +122,6 @@ build {
       "${path.root}/../scripts/build/Install-OpenSSL.ps1",
       "${path.root}/../scripts/build/Install-LLVM.ps1"
     ]
-  }
-
-  provisioner "windows-restart" {
-    restart_timeout = "10m"
   }
 
   provisioner "powershell" {
@@ -217,12 +193,6 @@ build {
     ]
   }
 
-  provisioner "windows-restart" {
-    check_registry        = true
-    restart_check_command = "powershell -command \"& {if ((-not (Get-Process TiWorker.exe -ErrorAction SilentlyContinue)) -and (-not [System.Environment]::HasShutdownStarted) ) { Write-Output 'Restart complete' }}\""
-    restart_timeout       = "30m"
-  }
-
   provisioner "powershell" {
     pause_before     = "2m0s"
     environment_vars = ["IMAGE_FOLDER=${var.image_folder}", "TEMP_DIR=${var.temp_dir}"]
@@ -267,10 +237,6 @@ build {
       "${path.root}/../scripts/build/Post-Build-Validation.ps1"
     ]
     skip_clean       = true
-  }
-
-  provisioner "windows-restart" {
-    restart_timeout = "10m"
   }
 
   provisioner "powershell" {

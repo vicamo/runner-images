@@ -10,6 +10,11 @@ $global:ErrorActionPreference = "Stop"
 $global:ErrorView = "NormalView"
 Set-StrictMode -Version Latest
 
+trap {
+    Write-Host $_.ScriptStackTrace
+    throw
+}
+
 Import-Module (Join-Path $PSScriptRoot "SoftwareReport.Android.psm1") -DisableNameChecking
 Import-Module (Join-Path $PSScriptRoot "SoftwareReport.Browsers.psm1") -DisableNameChecking
 Import-Module (Join-Path $PSScriptRoot "SoftwareReport.CachedTools.psm1") -DisableNameChecking
@@ -28,7 +33,9 @@ sudo chown -R ${env:USER}: $env:HOME
 # Software report
 $softwareReport = [SoftwareReport]::new("Ubuntu $(Get-OSVersionShort)")
 $softwareReport.Root.AddToolVersion("OS Version:", $(Get-OSVersionFull))
-$softwareReport.Root.AddToolVersion("Kernel Version:", $(Get-KernelVersion))
+if (-not (Test-IsDockerContainer)) {
+    $softwareReport.Root.AddToolVersion("Kernel Version:", $(Get-KernelVersion))
+}
 $softwareReport.Root.AddToolVersion("Image Version:", $env:IMAGE_VERSION)
 $softwareReport.Root.AddToolVersion("Systemd version:", $(Get-SystemdVersion))
 
@@ -286,7 +293,9 @@ $powerShellTools = $installedSoftware.AddHeader("PowerShell Tools")
 $powerShellTools.AddToolVersion("PowerShell", $(Get-PowershellVersion))
 $powerShellTools.AddHeader("PowerShell Modules").AddNodes($(Get-PowerShellModules))
 
-$installedSoftware.AddHeader("Web Servers").AddTable($(Build-WebServersTable))
+if (-not (Test-IsDockerContainer)) {
+    $installedSoftware.AddHeader("Web Servers").AddTable($(Build-WebServersTable))
+}
 
 if (Test-IsX64) {
     $androidTools = $installedSoftware.AddHeader("Android")
